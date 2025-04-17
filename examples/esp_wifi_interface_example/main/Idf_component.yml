@@ -1,0 +1,12 @@
+dependencies:
+  tuliocharles/esp_wifi_interface:
+    version: "*"
+    # for local developmente, use the local
+    # copy of the component
+    override_path: "../../../"
+  protocol_examples_common:
+    path: ${IDF_PATH}/examples/common_components/protocol_examples_common
+  espressif/esp_wifi_remote:
+    version: ">=0.1.12"
+    rules:
+      - if: "target in [esp32p4, esp32h2]"
