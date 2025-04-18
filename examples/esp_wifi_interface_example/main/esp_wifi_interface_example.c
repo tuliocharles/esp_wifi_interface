@@ -17,6 +17,4 @@ void app_main(void)
     
     WiFiSimpleConnection(wifi_inteface_handle);
 
-    
-
 }

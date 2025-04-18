@@ -11,13 +11,10 @@ autor: Túlio Carvalho
      * This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
      * Read "Establishing Wi-Fi or Ethernet Connection" section in
      * examples/protocols/README.md for more information about this function.
-     
-     
 */
 
 #include "esp_wifi_interface.h"
 
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE // definição necessária para aumentar o nível de verbosidade -- definido antes de esp_log.h
 #include "esp_log.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -25,6 +22,7 @@ autor: Túlio Carvalho
 
 #include "esp_system.h"
 #include "nvs_flash.h"
+#include "esp_nvs.h" //component from namespace: tuliocharles/
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "protocol_examples_common.h"
@@ -53,7 +51,6 @@ static EventGroupHandle_t s_wifi_event_group;
 */
 
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
-
 //#if CONFIG_ESP_WPA3_SAE_PWE_HUNT_AND_PECK
 //#define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
 //#define EXAMPLE_H2E_IDENTIFIER ""
@@ -94,9 +91,8 @@ struct esp_wifi_interface_t{
     uint8_t ssid[32]; // SSID do ponto de acesso
     uint8_t password[64]; // Senha do ponto de acesso
     uint8_t channel; // Canal do ponto de acesso
+    esp_nvs_handle_t nvs_handle; // Handle para o NVS
 };
-
-
 
 static const char *TAG = "wifi station";
 
@@ -147,6 +143,16 @@ esp_err_t WiFiInit (esp_wifi_interface_config_t *config, esp_wifi_interface_hand
 
     *handle = wifi_interface;
     ESP_LOGI(tag_wifi, "[APP] Configuração WiFi criada com sucesso.");
+    
+    esp_nvs_config_t esp_nvs_config = {
+        .name_space = "wifi_nvs",
+        .key = "SSD1",
+        .value_size = 64,
+    };
+    
+    init_esp_nvs(&esp_nvs_config, &wifi_interface->nvs_handle);
+    ESP_LOGI(tag_wifi, "[APP] Configuração NVS criada com sucesso.");
+   
     return ESP_OK;
 err:
     ESP_LOGE(tag_wifi, "[APP] Falha ao criar configuração WiFi.");
@@ -170,15 +176,6 @@ void WiFiSimpleConnection(esp_wifi_interface_handle_t handle)
     ESP_LOGI(tag_wifi, "[APP] IDF version: %s", esp_get_idf_version());
 
     
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( ret );
-
-    ESP_LOGI(tag_wifi, "Memória Flash iniciada com sucesso");
-
     s_wifi_event_group = xEventGroupCreate();
 
     ESP_ERROR_CHECK(esp_netif_init());
