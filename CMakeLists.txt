@@ -5,4 +5,6 @@ idf_component_register(SRCS "esp_wifi_interface.c"
                         esp_event
                         esp_netif
                         esp_wifi
-                        protocol_examples_common)
+                        protocol_examples_common
+                        esp-tls
+                        esp_http_server)

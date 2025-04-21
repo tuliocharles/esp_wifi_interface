@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include "esp_wifi_interface.h"
 
-#define ESP_WIFI_SSID      "gtpcarvalho3"
-#define ESP_WIFI_PASS      "Gi70!Tu79?Pe06"
+#define ESP_WIFI_SSID      "myssid"
+#define ESP_WIFI_PASS      "mypassword"
 
 void app_main(void)
 {
