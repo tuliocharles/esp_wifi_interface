@@ -1,3 +1,7 @@
+/*
+Copyright (c) 2025 Tulio Carvalho
+Licensed under the MIT License. See LICENSE file for details.
+*/
 
 #include <stdio.h>
 #include "esp_wifi_interface.h"
