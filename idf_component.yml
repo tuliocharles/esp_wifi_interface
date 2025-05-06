@@ -1,6 +1,6 @@
 license: MIT
 
-description: ESP-WIFI TOP LEVEL ESP IDF CONNECTION
+description: ESP-WIFI TOP LEVEL ESP IDF WIFI CONNECTION
 
 url: https://github.com/tuliocharles/esp_wifi_inteface
 repository: https://github.com/tuliocharles/esp_wifi_inteface.git
@@ -9,7 +9,7 @@ maintainers:
   - "Túlio Carvalho <tulio.cefetmg@gmail.com>"
 
 dependencies:
-  idf: ">=4.4"
+  idf: ">=5.4"
   espressif/esp_wifi_remote:
     version: ">=0.1.12"
     rules:

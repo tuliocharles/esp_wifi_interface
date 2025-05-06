@@ -3,19 +3,26 @@
 
 #include <stdio.h>
 #include "esp_check.h"
+#include "esp_wifi.h"
+#include "driver/gpio.h"
 
 typedef struct esp_wifi_interface_t *esp_wifi_interface_handle_t;
 
 typedef struct {
-    char ssid[32]; // SSID do ponto de acesso
-    char password[64]; // Senha do ponto de acesso
-    uint8_t channel; // Canal do ponto de acesso
+    uint8_t channel; // Access point channel
+    uint8_t esp_max_retry; // Maximum number of retries to connect to the AP
+    uint8_t wifi_sae_mode; // SAE mode for WPA3
+    uint8_t esp_wifi_scan_auth_mode_treshold; // Authentication mode threshold for Wi-Fi scan
+    gpio_num_t status_io;
+
+    
 } esp_wifi_interface_config_t;
 
-esp_err_t WiFiInit (esp_wifi_interface_config_t *config, esp_wifi_interface_handle_t *handle);
-void WiFiDeinit (esp_wifi_interface_handle_t *handle);
+esp_err_t WiFiInit (esp_wifi_interface_config_t *config);
 
-void WiFiSimpleConnection(esp_wifi_interface_handle_t handle);
+void WiFiDeinit ();
+
+void WiFiSimpleConnection();
 
 
 #endif

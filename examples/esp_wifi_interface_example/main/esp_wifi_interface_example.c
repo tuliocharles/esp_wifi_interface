@@ -1,20 +1,22 @@
+
 #include <stdio.h>
 #include "esp_wifi_interface.h"
 
-#define ESP_WIFI_SSID      "myssid"
-#define ESP_WIFI_PASS      "mypassword"
+#define LED_STATUS 2
 
 void app_main(void)
 {
     esp_wifi_interface_config_t wifi_inteface_config = {
-        .ssid = ESP_WIFI_SSID, // SSID do ponto de acesso
-        .password = ESP_WIFI_PASS, // Senha do ponto de acesso
-        .channel = 1 // Canal do ponto de acesso            
+        .channel = 1, // Access point channel
+        .esp_max_retry = 10, // Maximum number of retries to connect to the AP         
+        .wifi_sae_mode = WPA3_SAE_PWE_BOTH, // SAE mode for WPA3
+        .esp_wifi_scan_auth_mode_treshold = WIFI_AUTH_WPA_WPA2_PSK, // Authentication mode threshold for Wi-Fi scan
+        .status_io = LED_STATUS, // Connection status. 
     };
-    esp_wifi_interface_handle_t wifi_inteface_handle = NULL;
-
-    WiFiInit (&wifi_inteface_config, &wifi_inteface_handle);
     
-    WiFiSimpleConnection(wifi_inteface_handle);
+    WiFiInit (&wifi_inteface_config);
+
+    WiFiSimpleConnection();
+    
 
 }

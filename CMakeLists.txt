@@ -7,4 +7,5 @@ idf_component_register(SRCS "esp_wifi_interface.c"
                         esp_wifi
                         protocol_examples_common
                         esp-tls
-                        esp_http_server)
+                        esp_http_server
+                        esp_driver_gpio)

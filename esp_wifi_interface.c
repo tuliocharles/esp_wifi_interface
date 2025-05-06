@@ -1,16 +1,4 @@
 /*
-Descrição: Componente para conexão Wifi de forma simples e direta
-
-Conecção depende do SSID e Senha armazenado em sdconfig.
-inputs: Não possui.
-outputs: Não possui.
-O programa não continua caso a conexão não estabeleça.
-
-autor: Túlio Carvalho
-
-     * This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
 */
 
 #include "esp_wifi_interface.h"
@@ -22,7 +10,7 @@ autor: Túlio Carvalho
 
 #include "esp_system.h"
 #include "nvs_flash.h"
-#include "esp_nvs.h" //component from namespace: tuliocharles/
+#include "esp_nvs.h" 
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "protocol_examples_common.h"
@@ -32,20 +20,13 @@ autor: Túlio Carvalho
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
-#include "esp_wifi.h"
-
 #include "lwip/err.h"
 #include "lwip/sys.h"
-
-
-
-
 
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/param.h>
-
 
 #include "protocol_examples_utils.h"
 #include "esp_tls_crypto.h"
@@ -54,65 +35,79 @@ autor: Túlio Carvalho
 #include "esp_tls.h"
 #include "esp_check.h"
 
+#include <ctype.h>
+
 #define EXAMPLE_HTTP_QUERY_KEY_MAX_LEN (64)
-
-static const char *tag_wifi = "WiFi";
-
-/* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_wifi_event_group;
-
-/* The examples use WiFi configuration that you can set via project configuration menu
-
-   If you'd rather not, just change the below entries to strings with
-   the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
-*/
-
-#define EXAMPLE_ESP_MAXIMUM_RETRY 5
-// #if CONFIG_ESP_WPA3_SAE_PWE_HUNT_AND_PECK
-// #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
-// #define EXAMPLE_H2E_IDENTIFIER ""
-// #elif CONFIG_ESP_WPA3_SAE_PWE_HASH_TO_ELEMENT
-// #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HASH_TO_ELEMENT
-// #define EXAMPLE_H2E_IDENTIFIER CONFIG_ESP_WIFI_PW_ID
-// #elif CONFIG_ESP_WPA3_SAE_PWE_BOTH
-#define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
+#define SSID_PA "COIIOTE"
+#define SSID_PASS_PA "coiiote123"
 #define EXAMPLE_H2E_IDENTIFIER "" // CONFIG_ESP_WIFI_PW_ID
-// #endif
-// #if CONFIG_ESP_WIFI_AUTH_OPEN
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_OPEN
-// #elif CONFIG_ESP_WIFI_AUTH_WEP
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WEP
-// #elif CONFIG_ESP_WIFI_AUTH_WPA_PSK
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA_PSK
-// #elif CONFIG_ESP_WIFI_AUTH_WPA2_PSK
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
-// #elif CONFIG_ESP_WIFI_AUTH_WPA_WPA2_PSK
-#define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA_WPA2_PSK
-// #elif CONFIG_ESP_WIFI_AUTH_WPA3_PSK
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA3_PSK
-// #elif CONFIG_ESP_WIFI_AUTH_WPA2_WPA3_PSK
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_WPA3_PSK
-// #elif CONFIG_ESP_WIFI_AUTH_WAPI_PSK
-// #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WAPI_PSK
-// #endif
-
-/* The event group allows multiple bits for each event, but we only care about two events:
- * - we are connected to the AP with an IP
- * - we failed to connect after the maximum amount of retries */
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
+
+
+typedef enum
+{
+    sta,
+    ap
+} wifi_typemode_t;
 
 typedef struct esp_wifi_interface_t esp_wifi_interface_t;
 
 struct esp_wifi_interface_t
 {
-    uint8_t ssid[32];            // SSID do ponto de acesso
-    uint8_t password[64];        // Senha do ponto de acesso
-    uint8_t channel;             // Canal do ponto de acesso
-    esp_nvs_handle_t nvs_handle; // Handle para o NVS
+    uint8_t ssid[32];     // name of the access point
+    uint8_t password[64]; // password of the access point
+    uint8_t channel;      // channel of the access point
+    wifi_typemode_t wifi_mode;  // mode of the access point
+    esp_nvs_handle_t nvs_handle; // NVS handle
+    httpd_handle_t server;     // Handle off the web server
+    uint8_t esp_max_retry; // maximum number of retries to connect to the AP
+    uint8_t s_retry_num; // Number of attempts to connect to the AP
+    uint8_t wifi_sae_mode; // SAE mode for WPA3
+    uint8_t esp_wifi_scan_auth_mode_treshold; // Authentication mode threshold for Wi-Fi scan
+    gpio_num_t status_io;
 };
 
-static int s_retry_num = 0;
+
+static esp_wifi_interface_handle_t wifi_interface_handle = NULL;
+static const char *tag_wifi = "WiFi";
+static EventGroupHandle_t s_wifi_event_group; // FreeRTOS event group to signal when we are connected
+
+
+// convert a hex digit to its integer value
+static char from_hex(char ch)
+{
+    if (isdigit((unsigned char)ch))
+        return ch - '0';
+    if (isupper((unsigned char)ch))
+        return ch - 'A' + 10;
+    return ch - 'a' + 10;
+}
+
+// decod percent‑encoding (URL) acording to RFC 3986
+// https://datatracker.ietf.org/doc/html/rfc3986#section-2.1
+static void url_decode(char *dst, const char *src)
+{
+    while (*src)
+    {
+        if (*src == '%' && isxdigit((unsigned char)src[1]) && isxdigit((unsigned char)src[2]))
+        {
+            *dst++ = from_hex(src[1]) << 4 | from_hex(src[2]);
+            src += 3;
+        }
+        else if (*src == '+')
+        {
+            *dst++ = ' ';
+            src++;
+        }
+        else
+        {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+}
+
 
 /* An HTTP GET handler */
 static esp_err_t getssid_get_handler(httpd_req_t *req)
@@ -233,8 +228,11 @@ static const httpd_uri_t getssid = {
 /* An HTTP POST handler */
 static esp_err_t savessid_post_handler(httpd_req_t *req)
 {
-    char buf[1000];
+    char buf[100];
     int ret, remaining = req->content_len;
+
+    void *ctx = httpd_get_global_user_ctx(req->handle);
+    esp_wifi_interface_handle_t handle = (esp_wifi_interface_handle_t)ctx;
 
     while (remaining > 0)
     {
@@ -258,6 +256,37 @@ static esp_err_t savessid_post_handler(httpd_req_t *req)
         ESP_LOGI(tag_wifi, "=========== RECEIVED DATA ==========");
         ESP_LOGI(tag_wifi, "%.*s", ret, buf);
         ESP_LOGI(tag_wifi, "====================================");
+
+        char *saveptr1, *saveptr2;
+        char *str = strndup(buf, ret);
+        char *pair = strtok_r(str, "&", &saveptr1);
+        while (pair)
+        {
+            char *key = strtok_r(pair, "=", &saveptr2);
+            char *value = strtok_r(NULL, "=", &saveptr2);
+            printf("Chave: %s, Valor: %s\n", key, value);
+            pair = strtok_r(NULL, "&", &saveptr1);
+            // if key == "ssid" or "password"
+            if (strcmp(key, "ssid") == 0)
+            {
+                // salva o valor no ssid do handle
+
+                esp_nvs_change_key("SSID", handle->nvs_handle);
+                char ssid[100];
+                url_decode(ssid, value);
+                esp_nvs_write_string(ssid, handle->nvs_handle);
+            }
+            else if (strcmp(key, "password") == 0)
+            {
+                // salva o valor na senha do handle
+                esp_nvs_change_key("PASS", handle->nvs_handle);
+                char pass[100];
+                url_decode(pass, value);
+                esp_nvs_write_string(pass, handle->nvs_handle);
+            }
+        }
+        free(str);
+
         // salva na memória
     }
 
@@ -291,14 +320,18 @@ esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
     return ESP_FAIL;
 }
 
-static httpd_handle_t start_webserver(void)
+static httpd_handle_t start_webserver(esp_wifi_interface_handle_t handle1)
 {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;
+    esp_wifi_interface_handle_t handle = (esp_wifi_interface_handle_t)handle1;
+    config.global_user_ctx = handle;
 
-    // config.max_uri_len     = 512;    // padrão 256 :contentReference[oaicite:9]{index=9}
-    //  config.max_req_hdr_len = 1024;   // padrão 512 :contentReference[oaicite:10]{index=10}
+    printf("handle: %p\n", handle);
+    printf("handle->nvs_handle webserver: %p\n", handle->nvs_handle);
+    printf("handle->ssid webserver: %s\n", handle->ssid);
+    printf("handle->password webserver: %s\n", handle->password);
 
     // Start the httpd server
     ESP_LOGI(tag_wifi, "Starting server on port: '%d'", config.server_port);
@@ -321,26 +354,30 @@ static esp_err_t stop_webserver(httpd_handle_t server)
     return httpd_stop(server);
 }
 
-// inicio dos Handlers relacionados a conexão com o WiFi
-
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data)
 {
+    
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
     {
         esp_wifi_connect();
     }
+    
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
+        
+        if (wifi_interface_handle->s_retry_num < wifi_interface_handle->esp_max_retry)
         {
             esp_wifi_connect();
-            s_retry_num++;
+            wifi_interface_handle->s_retry_num++;
+            
             ESP_LOGI(tag_wifi, "retry to connect to the AP");
+            gpio_set_level(wifi_interface_handle->status_io,  wifi_interface_handle->s_retry_num%2);
         }
         else
         {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            gpio_set_level(wifi_interface_handle->status_io, 0);    
         }
         ESP_LOGI(tag_wifi, "connect to the AP fail");
     }
@@ -348,8 +385,9 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(tag_wifi, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
+        wifi_interface_handle->s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        gpio_set_level(wifi_interface_handle->status_io, 1);
     }
 }
 
@@ -374,58 +412,111 @@ static void disconnect_handler(void *arg, esp_event_base_t event_base,
 static void connect_handler(void *arg, esp_event_base_t event_base,
                             int32_t event_id, void *event_data)
 {
-    httpd_handle_t *server = (httpd_handle_t *)arg;
-    if (*server == NULL)
+    esp_wifi_interface_handle_t handle = (esp_wifi_interface_handle_t)arg;
+    // httpd_handle_t *server = (httpd_handle_t *)arg;
+    printf("handle no connect: %p\n", handle);
+    if (handle->server == NULL)
     {
         ESP_LOGI(tag_wifi, "Starting webserver");
-        *server = start_webserver();
+        handle->server = start_webserver(handle);
     }
 }
 
-// Fim dos Handlers relacionados a conexão com o WiFi
-
-// inicio funções internas da biblioteca
-
-// fim funções internas da biblioteca
-
-
-// inicio funções públicas da biblioteca
-
-esp_err_t WiFiInit(esp_wifi_interface_config_t *config, esp_wifi_interface_handle_t *handle)
+esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
 {
+
+    esp_reset_reason_t reason = esp_reset_reason();
+    ESP_LOGI(tag_wifi, "Reset reason: %d", reason);
 
     esp_err_t ret = ESP_OK;
     esp_wifi_interface_t *wifi_interface = NULL;
-    ESP_LOGI(tag_wifi, "[APP] WiFiInit..");
+    ESP_LOGI(tag_wifi, "WiFiInit..");
 
-    ESP_GOTO_ON_FALSE(config && handle, ESP_ERR_INVALID_ARG, err, tag_wifi, "[APP] Invalid argument");
-    ESP_LOGI(tag_wifi, "[APP] Configuração válida.");
+    ESP_GOTO_ON_FALSE(config, ESP_ERR_INVALID_ARG, err, tag_wifi, "Invalid argument");
+    ESP_LOGI(tag_wifi, "Configuration done");
 
     wifi_interface = calloc(1, sizeof(esp_wifi_interface_t));
 
-    // Copiar o SSID
-    memcpy(wifi_interface->ssid, config->ssid, sizeof(wifi_interface->ssid));
-
-    // Copiar a senha
-    memcpy(wifi_interface->password, config->password, sizeof(wifi_interface->password));
-
     wifi_interface->channel = config->channel;
+    wifi_interface->esp_max_retry = config->esp_max_retry;
+    wifi_interface->s_retry_num = 0;
+    wifi_interface->wifi_sae_mode = config->wifi_sae_mode;
+    wifi_interface->status_io = config->status_io;
 
-    *handle = wifi_interface;
-    ESP_LOGI(tag_wifi, "[APP] Configuração WiFi criada com sucesso.");
+
+    uint64_t gpio_pin_sel = (1ULL<<wifi_interface->status_io); 
+
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = gpio_pin_sel;
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
 
     esp_nvs_config_t esp_nvs_config = {
         .name_space = "wifi_nvs",
-        .key = "SSD1",
+        .key = "SSID",
         .value_size = 64,
     };
 
     init_esp_nvs(&esp_nvs_config, &wifi_interface->nvs_handle);
-    ESP_LOGI(tag_wifi, "[APP] Configuração NVS criada com sucesso.");
+    ESP_LOGI(tag_wifi, "NVS Created Successfully");
+
+    char *p_ssid = NULL;
+    esp_err_t ret_nvs = esp_nvs_read_string(wifi_interface->nvs_handle, &p_ssid);
+   
+    if (ret_nvs == ESP_ERR_NVS_NOT_FOUND)
+    {
+        esp_nvs_change_key("SSID", wifi_interface->nvs_handle);
+        ESP_LOGI(tag_wifi, "Key changed to SSID");
+        esp_nvs_write_string("empty", wifi_interface->nvs_handle);
+
+        esp_nvs_change_key("PASS", wifi_interface->nvs_handle);
+        ESP_LOGI(tag_wifi, "key changed to PASS");
+        esp_nvs_write_string("empty", wifi_interface->nvs_handle);
+    }
+
+   
+    esp_nvs_change_key("SSID", wifi_interface->nvs_handle);
+    ESP_LOGI(tag_wifi, "Key changed to SSID");
+
+    if (esp_nvs_read_string(wifi_interface->nvs_handle, &p_ssid) != ESP_OK)
+    {
+        ESP_LOGI(tag_wifi, "Error to read SSID");
+    }
+
+    if (strcmp(p_ssid, "empty") == 0)
+    {
+        wifi_interface->wifi_mode = ap; // modo AP
+        ESP_LOGI(tag_wifi, "AP mode Activeted");
+    }
+    else
+    {
+        wifi_interface->wifi_mode = sta; // modo STA
+        ESP_LOGI(tag_wifi, "STA ~Mode activated");
+        // Copiar o SSID
+        memcpy(wifi_interface->ssid, p_ssid, strlen(p_ssid) + 1);
+
+        char *p_password = NULL;
+        esp_nvs_change_key("PASS", wifi_interface->nvs_handle);
+        ESP_LOGI(tag_wifi, "Key changed to PASS");
+        if (esp_nvs_read_string(wifi_interface->nvs_handle, &p_password) != ESP_OK)
+        {
+            ESP_LOGE(tag_wifi, "Error to read Password");
+        }
+        // Copiar a senha
+        memcpy(wifi_interface->password, p_password, strlen(p_password) + 1);
+    }
+
+    esp_nvs_list_namespaces();
+
+    wifi_interface_handle = wifi_interface;
+    ESP_LOGI(tag_wifi, "Configuration done");
 
     return ESP_OK;
 err:
-    ESP_LOGE(tag_wifi, "[APP] Falha ao criar configuração WiFi.");
+    ESP_LOGE(tag_wifi, "Error to Conifgure");
     if (wifi_interface)
     {
         free(wifi_interface);
@@ -434,10 +525,10 @@ err:
     return ret;
 }
 
-void WiFiSimpleConnection(esp_wifi_interface_handle_t handle)
+void WiFiSimpleConnection()
 {
-
-    // Logs e event group
+    // wifi_typemode_t WifiMode = ap; // escolher entre AP ou STA
+    // Logs e event group bu
     ESP_LOGI(tag_wifi, "[APP] Startup..");
     ESP_LOGI(tag_wifi, "[APP] Free memory: %" PRIu32 " bytes", esp_get_free_heap_size());
     ESP_LOGI(tag_wifi, "[APP] IDF version: %s", esp_get_idf_version());
@@ -450,160 +541,159 @@ void WiFiSimpleConnection(esp_wifi_interface_handle_t handle)
 
     // escolher entre criar netif para sta ou ap
     // esp_netif_create_default_wifi_ap();
-    esp_netif_create_default_wifi_sta();
+    if (wifi_interface_handle->wifi_mode == sta)
+    {
+        esp_netif_create_default_wifi_sta();
+    }
+    else if (wifi_interface_handle->wifi_mode == ap)
+    {
+        esp_netif_create_default_wifi_ap();
+    }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    wifi_config_t wifi_config = {
+    wifi_config_t wifi_config_sta = {
         .sta = {
-            //.ssid = handle->ssid,
-            //.password = handle->password,
-            /* Authmode threshold resets to WPA2 as default if password matches WPA2 standards (password len => 8).
-             * If you want to connect the device to deprecated WEP/WPA networks, Please set the threshold value
-             * to WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK and set the password with length and format matching to
-             * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
-             */
-            .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
-            .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
+            .threshold.authmode = wifi_interface_handle->esp_wifi_scan_auth_mode_treshold,
+            .sae_pwe_h2e = wifi_interface_handle->wifi_sae_mode,
             .sae_h2e_identifier = EXAMPLE_H2E_IDENTIFIER,
+        },
+
+    };
+
+    wifi_config_t wifi_config_ap = {
+        .ap = {
+            .ssid = SSID_PA,
+            .ssid_len = strlen(SSID_PA),
+            .channel = 1,
+            .password = SSID_PASS_PA,
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .pmf_cfg = {
+                .required = true,
+            },
         },
     };
 
-    memcpy(wifi_config.sta.ssid, handle->ssid, sizeof(wifi_config.sta.ssid));
-    memcpy(wifi_config.sta.password, handle->password, sizeof(wifi_config.sta.password));
+    if (wifi_interface_handle->wifi_mode == ap)
+    {
+        // COLOCAR AS DIFERENÇAS DE CONFIGARAÇÕES
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config)); // comentado para fazer scan
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config_ap)); // comentado para fazer scan
+    }
+    else if (wifi_interface_handle->wifi_mode == sta)
+    {
+        // COLOCAR AS DIFERENÇAS DE CONFIGURAÇÃO
+        memcpy(wifi_config_sta.sta.ssid, wifi_interface_handle->ssid, sizeof(wifi_config_sta.sta.ssid));
+        memcpy(wifi_config_sta.sta.password, wifi_interface_handle->password, sizeof(wifi_config_sta.sta.password));
+
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config_sta)); // comentado para fazer scan
+    }
 
     esp_err_t ret = esp_wifi_start();
+
     printf("%s\n", esp_err_to_name(ret));
     ESP_ERROR_CHECK(ret);
 
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_got_ip));
-
-    esp_wifi_connect();
-    ESP_LOGI(tag_wifi, "wifi_connect finished.");
-
-    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
-     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                           pdFALSE,
-                                           pdFALSE,
-                                           portMAX_DELAY);
-
-    /* xEventGroupWaitBits() returns after bits are set - so we can test if the bits we need are set */
-    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
-     * happened. */
-    if (bits & WIFI_CONNECTED_BIT)
+    if (wifi_interface_handle->wifi_mode == sta)
     {
-        ESP_LOGI(tag_wifi, "connected to ap SSID:%s password:%s",
-                 handle->ssid, handle->password);
-    }
-    else if (bits & WIFI_FAIL_BIT)
-    {
-        ESP_LOGI(tag_wifi, "Failed to connect to SSID:%s, password:%s",
-                 handle->ssid, handle->password);
-    }
-    else
-    {
-        ESP_LOGE(tag_wifi, "UNEXPECTED EVENT");
+
+        esp_event_handler_instance_t instance_any_id;
+        esp_event_handler_instance_t instance_got_ip;
+        ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                            ESP_EVENT_ANY_ID,
+                                                            &event_handler,
+                                                            NULL,
+                                                            &instance_any_id));
+        ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                            IP_EVENT_STA_GOT_IP,
+                                                            &event_handler,
+                                                            NULL,
+                                                            &instance_got_ip));
+
+        esp_wifi_connect();
+        ESP_LOGI(tag_wifi, "wifi_connect finished.");
+
+        /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
+         * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+        EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                                               WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                               pdFALSE,
+                                               pdFALSE,
+                                               portMAX_DELAY);
+
+        /* xEventGroupWaitBits() returns after bits are set - so we can test if the bits we need are set */
+        /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
+         * happened. */
+        if (bits & WIFI_CONNECTED_BIT)
+        {
+            ESP_LOGI(tag_wifi, "connected to ap SSID:%s password:%s",
+                wifi_interface_handle->ssid, wifi_interface_handle->password);
+        }
+        else if (bits & WIFI_FAIL_BIT)
+        {
+            ESP_LOGI(tag_wifi, "Failed to connect to SSID:%s, password:%s",
+                wifi_interface_handle->ssid, wifi_interface_handle->password);
+
+            esp_nvs_change_key("SSID", wifi_interface_handle->nvs_handle);
+            esp_nvs_write_string("empty", wifi_interface_handle->nvs_handle);
+            esp_nvs_change_key("PASS", wifi_interface_handle->nvs_handle);
+            esp_nvs_write_string("empty", wifi_interface_handle->nvs_handle);
+        }
+        else
+        {
+            ESP_LOGE(tag_wifi, "UNEXPECTED EVENT");
+        }
     }
 
+    // ESSA PARTE VAI SER SÓ PARA AP... MAS POR ENQUANTO VOU DEIXAR ABERTO
     // start server quando for AP
-    static httpd_handle_t server = NULL;
+    if (wifi_interface_handle->wifi_mode == ap)
+    {
+        wifi_interface_handle->server = NULL;
 
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &server));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
-    
-    server = start_webserver();
-    if (server == NULL)
-    {
-        ESP_LOGE(tag_wifi, "Failed to start webserver");
-    }
-    else
-    {
-        ESP_LOGI(tag_wifi, "Webserver started successfully");
-    }
-    while (server)
-    {
-        sleep(5);
+        ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, wifi_interface_handle));
+        ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &wifi_interface_handle->server));
+
+        wifi_interface_handle->server = start_webserver(wifi_interface_handle);
+        if (wifi_interface_handle->server == NULL)
+        {
+            ESP_LOGE(tag_wifi, "Failed to start webserver");
+        }
+        else
+        {
+            ESP_LOGI(tag_wifi, "Webserver started successfully");
+        }
+
+        char *p_ssid = NULL;
+        bool status_io_aux = false;
+        while (wifi_interface_handle->server)
+        {
+            vTaskDelay( 200/ portTICK_PERIOD_MS);
+            status_io_aux = !status_io_aux;
+            gpio_set_level(wifi_interface_handle->status_io, status_io_aux);
+            esp_nvs_change_key("SSID", wifi_interface_handle->nvs_handle);
+            if (esp_nvs_read_string(wifi_interface_handle->nvs_handle, &p_ssid) != ESP_OK)
+            {
+                ESP_LOGE(tag_wifi, "Falha ao ler o SSID %d", 0);
+            }
+
+            if (strcmp(p_ssid, "empty") != 0)
+            {
+                ESP_LOGI(tag_wifi, "New SSID entered, restarting... ");
+                ESP_LOGI(tag_wifi, "SSID: %s", p_ssid);
+                esp_wifi_stop();
+                esp_wifi_deinit();
+                stop_webserver(wifi_interface_handle->server);
+                wifi_interface_handle->server = NULL;
+                fflush(stdout);
+                esp_restart();
+            }
+        }
+        
     }
 }
 
-// fim funções públicas da biblioteca
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* Exemplo ainda perdido sobre scanear ssids*/
-
-/*esp_wifi_scan_start(NULL, true);
-
-ESP_LOGI(TAG, "Scan done");
-
-uint16_t number = 5;
-wifi_ap_record_t ap_info[5];
-uint16_t ap_count = 0;
-memset(ap_info, 0, sizeof(ap_info));
-
-ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
-ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
-ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
-for (int i = 0; i < number; i++) {
-    ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
-    ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
-    //print_auth_mode(ap_info[i].authmode);
-    //if (ap_info[i].authmode != WIFI_AUTH_WEP) {
-   //     print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
-    //}
-    //ESP_LOGI(TAG, "Channel \t\t%d", ap_info[i].primary);
-}*/
-
-// faz o levantamento de quantos ssid existem armazenado na nvs
-/*const uint8_t ssid_mem_len = 6;
-const uint8_t ssid_len = 32;
-const uint8_t ssid_max = 5;
-char newkey[ssid_mem_len];
-char nvs_ssid[ssid_max][ssid_len];
-for(int i = 0; i < 5; i++){
-    char *ssid_ptr = NULL;
-    sprintf(newkey,"SSID%d", i);
-    esp_nvs_change_key(newkey, handle->nvs_handle);
-    ESP_LOGI(TAG, "Key changed to %s", newkey);
-    esp_err_t err = esp_nvs_read_string(handle->nvs_handle, &ssid_ptr);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read string: %s", esp_err_to_name(err));
-        break;
-    }
-    memcpy(nvs_ssid[i], ssid_ptr, strlen(ssid_ptr)+1); //
-    ESP_LOGI(TAG, "Read SSID: %s", nvs_ssid[i]);
-}
-if (strlen(nvs_ssid[0]) == 0) {
-    ESP_LOGI(TAG, "SSID not found in NVS.");
-} else {
-    ESP_LOGI(TAG, "At least one SSID found in NVS.");
-}
-*/
