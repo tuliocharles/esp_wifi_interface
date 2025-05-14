@@ -12,7 +12,7 @@ Licensed under the MIT License. See LICENSE file for details.
 
 #include "esp_system.h"
 #include "nvs_flash.h"
-#include "esp_nvs.h" 
+#include "esp_nvs.h"
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "protocol_examples_common.h"
@@ -46,7 +46,6 @@ Licensed under the MIT License. See LICENSE file for details.
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
-
 typedef enum
 {
     sta,
@@ -57,24 +56,24 @@ typedef struct esp_wifi_interface_t esp_wifi_interface_t;
 
 struct esp_wifi_interface_t
 {
-    uint8_t ssid[32];     // name of the access point
-    uint8_t password[64]; // password of the access point
-    uint8_t channel;      // channel of the access point
-    wifi_typemode_t wifi_mode;  // mode of the access point
-    esp_nvs_handle_t nvs_handle; // NVS handle
-    httpd_handle_t server;     // Handle off the web server
-    uint8_t esp_max_retry; // maximum number of retries to connect to the AP
-    uint8_t s_retry_num; // Number of attempts to connect to the AP
-    uint8_t wifi_sae_mode; // SAE mode for WPA3
+    uint8_t ssid[32];                         // name of the access point
+    uint8_t password[64];                     // password of the access point
+    uint8_t channel;                          // channel of the access point
+    wifi_typemode_t wifi_mode;                // mode of the access point
+    esp_nvs_handle_t nvs_handle;              // NVS handle
+    esp_nvs_handle_t nvs_coiiote_handle; // NVS handle for CoIIoTe
+    httpd_handle_t server;                    // Handle off the web server
+    uint8_t esp_max_retry;                    // maximum number of retries to connect to the AP
+    uint8_t s_retry_num;                      // Number of attempts to connect to the AP
+    uint8_t wifi_sae_mode;                    // SAE mode for WPA3
     uint8_t esp_wifi_scan_auth_mode_treshold; // Authentication mode threshold for Wi-Fi scan
     gpio_num_t status_io;
+    gpio_num_t reset_io;
 };
-
 
 static esp_wifi_interface_handle_t wifi_interface_handle = NULL;
 static const char *tag_wifi = "WiFi";
 static EventGroupHandle_t s_wifi_event_group; // FreeRTOS event group to signal when we are connected
-
 
 // convert a hex digit to its integer value
 static char from_hex(char ch)
@@ -109,7 +108,6 @@ static void url_decode(char *dst, const char *src)
     }
     *dst = '\0';
 }
-
 
 /* An HTTP GET handler */
 static esp_err_t getssid_get_handler(httpd_req_t *req)
@@ -194,16 +192,65 @@ static esp_err_t getssid_get_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
     httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
 
-    static char wifi_form_html[] =
+    char thingid[64];
+    char *p = NULL;
+    esp_nvs_change_key("thingid", wifi_interface_handle->nvs_coiiote_handle);
+    if (esp_nvs_read_string(wifi_interface_handle->nvs_coiiote_handle, &p) != ESP_OK){
+        thingid[0] = '\0';
+        ESP_LOGW(tag_wifi, "Error to read Thing-ID");
+    } else{
+        strcpy(thingid, p);
+    }
+    
+    char thingname[64];
+    esp_nvs_change_key("thingname", wifi_interface_handle->nvs_coiiote_handle);
+    if (esp_nvs_read_string(wifi_interface_handle->nvs_coiiote_handle, &p) != ESP_OK){
+        thingname[0] = '\0';
+        ESP_LOGW(tag_wifi, "Error to read Thing-NAME");
+    } else{
+        strcpy(thingname, p);
+    }
+
+    char workspace[64];
+    esp_nvs_change_key("workspace", wifi_interface_handle->nvs_coiiote_handle);
+    if (esp_nvs_read_string(wifi_interface_handle->nvs_coiiote_handle, &p) != ESP_OK){
+        workspace[0] = '\0';
+        ESP_LOGW(tag_wifi, "Error to read WORKSPACE");
+    } else{
+        strcpy(workspace, p);
+    }
+
+
+    static char wifi_form_html[2048];
+    
+    sprintf(wifi_form_html,
         "<!DOCTYPE html>"
-        "<html><body>"
-        "<h2>Configurar Wi Fi</h2>"
+        "<html>"
+        "<head>"
+        "<style>"
+        "body {  margin: 0;  padding: 0;  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;  background: linear-gradient(135deg, #e0eafc, #cfdef3);  display: flex;  flex-direction: column;  align-items: center;}"
+        ".container {  text-align: center;  background: white;  padding: 40px 60px;  border-radius: 16px;  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);}"
+        "form-group {  margin: 10px 0;  width: 100%%;  max-width: 400px;  text-align: left; }"
+        "input {  width: 100%%;  padding: 10px;  font-size: 1rem;  margin-top: 5px;  border: 1px solid #ccc;  border-radius: 4px;}"
+        "button {  width: 100%%;  padding: 12px;  background-color: #007bff;  color: white;  border: none;  border-radius: 4px;  font-size: 1rem;  cursor: pointer;  margin-top: 10px; }"        
+        "</style>"
+        "</head>"
+        "<body>"
+        "<div class=\"container\">"
+        "<h2>Wi-Fi</h2>"
         "<form action=\"/savessid\" method=\"post\">"
-        "SSID: <input name=\"ssid\" type=\"text\"><br>"
-        "Senha: <input name=\"password\" type=\"password\"><br>"
+        "SSID: <input name=\"ssid\" type=\"text\"> <br>"
+        "Password: <input name=\"password\" type=\"password\"><br>"
+        "<h3>CoIIoTe</h3>"
+        "Thing-ID: <input name=\"thingid\" type=\"text\" value=\"%s\"><br>"
+        "Thing-Name: <input name=\"thingname\" type=\"text\" value=\"%s\"><br>"
+        "Thing-Password: <input name=\"thingpassword\" type=\"password\"> <br>"
+        "Workspace: <input name=\"workspace\" type=\"text\" value=\"%s\"><br><br>"
         "<button type=\"submit\">Enviar</button>"
         "</form>"
-        "</body></html>";
+        "</div>"
+        "</body></html>", 
+        thingid, thingname, workspace);
 
     /* Send response with custom headers and body set as the
      * string passed in user context*/
@@ -230,7 +277,7 @@ static const httpd_uri_t getssid = {
 /* An HTTP POST handler */
 static esp_err_t savessid_post_handler(httpd_req_t *req)
 {
-    char buf[100];
+    char buf[1000];
     int ret, remaining = req->content_len;
 
     void *ctx = httpd_get_global_user_ctx(req->handle);
@@ -286,6 +333,44 @@ static esp_err_t savessid_post_handler(httpd_req_t *req)
                 url_decode(pass, value);
                 esp_nvs_write_string(pass, handle->nvs_handle);
             }
+            else if (strcmp(key, "thingid") == 0)
+            {
+                esp_nvs_change_key("thingid", handle->nvs_coiiote_handle);
+                char thingid[100];
+                url_decode(thingid, value);
+                esp_nvs_write_string(thingid, handle->nvs_coiiote_handle);
+
+            }
+            else if (strcmp(key, "thingname") == 0)
+            {
+                esp_nvs_change_key("thingname", handle->nvs_coiiote_handle);
+                char thingname[100];
+                url_decode(thingname, value);
+                esp_nvs_write_string(thingname, handle->nvs_coiiote_handle);
+
+            }
+            else if (strcmp(key, "thingpassword") == 0)
+            {
+                esp_nvs_change_key("thingpassword", handle->nvs_coiiote_handle);
+                char thingpassword[100];
+                url_decode(thingpassword, value);
+                esp_nvs_write_string(thingpassword, handle->nvs_coiiote_handle);
+
+            }
+            else if (strcmp(key, "workspace") == 0)
+            {
+                esp_nvs_change_key("workspace", handle->nvs_coiiote_handle);
+                char workspace[100];
+                url_decode(workspace, value);
+                esp_nvs_write_string(workspace, handle->nvs_coiiote_handle);
+
+            }
+            else
+            {
+                ESP_LOGI(tag_wifi, "Chave não reconhecida: %s", key);
+
+            }
+            
         }
         free(str);
 
@@ -356,30 +441,59 @@ static esp_err_t stop_webserver(httpd_handle_t server)
     return httpd_stop(server);
 }
 
+static void esp_wifi_restart()
+{
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    stop_webserver(wifi_interface_handle->server);
+    wifi_interface_handle->server = NULL;
+    fflush(stdout);
+    esp_restart();
+}
+
+static void esp_wifi_forget()
+{
+    esp_nvs_change_key("SSID", wifi_interface_handle->nvs_handle);
+    esp_nvs_write_string("empty", wifi_interface_handle->nvs_handle);
+    esp_nvs_change_key("PASS", wifi_interface_handle->nvs_handle);
+    esp_nvs_write_string("empty", wifi_interface_handle->nvs_handle);
+}
+
+void esp_wifi_check_reset_button()
+{
+    int ret = 0;
+    ret = gpio_get_level(wifi_interface_handle->reset_io);
+    if (ret == 0)
+    {
+        esp_wifi_forget();
+        esp_wifi_restart();
+    }
+}
+
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data)
 {
-    
+
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
     {
         esp_wifi_connect();
     }
-    
+
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
-        
+
         if (wifi_interface_handle->s_retry_num < wifi_interface_handle->esp_max_retry)
         {
             esp_wifi_connect();
             wifi_interface_handle->s_retry_num++;
-            
+
             ESP_LOGI(tag_wifi, "retry to connect to the AP");
-            gpio_set_level(wifi_interface_handle->status_io,  wifi_interface_handle->s_retry_num%2);
+            gpio_set_level(wifi_interface_handle->status_io, wifi_interface_handle->s_retry_num % 2);
         }
         else
         {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-            gpio_set_level(wifi_interface_handle->status_io, 0);    
+            gpio_set_level(wifi_interface_handle->status_io, 0);
         }
         ESP_LOGI(tag_wifi, "connect to the AP fail");
     }
@@ -444,9 +558,10 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
     wifi_interface->s_retry_num = 0;
     wifi_interface->wifi_sae_mode = config->wifi_sae_mode;
     wifi_interface->status_io = config->status_io;
+    wifi_interface->reset_io = config->reset_io;
 
-
-    uint64_t gpio_pin_sel = (1ULL<<wifi_interface->status_io); 
+    // Gpio configuration
+    uint64_t gpio_pin_sel = (1ULL << wifi_interface->status_io);
 
     gpio_config_t io_conf = {};
     io_conf.intr_type = GPIO_INTR_DISABLE;
@@ -454,6 +569,12 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
     io_conf.pin_bit_mask = gpio_pin_sel;
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+
+    gpio_pin_sel = (1ULL << wifi_interface->reset_io);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = gpio_pin_sel;
+    io_conf.pull_up_en = 1;
     gpio_config(&io_conf);
 
     esp_nvs_config_t esp_nvs_config = {
@@ -465,9 +586,22 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
     init_esp_nvs(&esp_nvs_config, &wifi_interface->nvs_handle);
     ESP_LOGI(tag_wifi, "NVS Created Successfully");
 
+       esp_nvs_config_t esp_nvs_coiiote_config = {
+        .name_space ="coiiote_nvs",
+        .key = "thingid",
+        .value_size = 64,
+    };
+    
+    if(init_esp_nvs(&esp_nvs_coiiote_config, &wifi_interface->nvs_coiiote_handle) == ESP_OK){
+        ESP_LOGI(tag_wifi, "NVS for CoIIote Created Successfully");
+    }else{
+        ESP_LOGE(tag_wifi, "NVS for CoIIote not created");
+    };
+    
+
     char *p_ssid = NULL;
     esp_err_t ret_nvs = esp_nvs_read_string(wifi_interface->nvs_handle, &p_ssid);
-   
+
     if (ret_nvs == ESP_ERR_NVS_NOT_FOUND)
     {
         esp_nvs_change_key("SSID", wifi_interface->nvs_handle);
@@ -479,7 +613,6 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
         esp_nvs_write_string("empty", wifi_interface->nvs_handle);
     }
 
-   
     esp_nvs_change_key("SSID", wifi_interface->nvs_handle);
     ESP_LOGI(tag_wifi, "Key changed to SSID");
 
@@ -496,7 +629,7 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
     else
     {
         wifi_interface->wifi_mode = sta; // modo STA
-        ESP_LOGI(tag_wifi, "STA ~Mode activated");
+        ESP_LOGI(tag_wifi, "STA Mode activated");
         // Copiar o SSID
         memcpy(wifi_interface->ssid, p_ssid, strlen(p_ssid) + 1);
 
@@ -602,7 +735,6 @@ void WiFiSimpleConnection()
 
     if (wifi_interface_handle->wifi_mode == sta)
     {
-
         esp_event_handler_instance_t instance_any_id;
         esp_event_handler_instance_t instance_got_ip;
         ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
@@ -633,17 +765,15 @@ void WiFiSimpleConnection()
         if (bits & WIFI_CONNECTED_BIT)
         {
             ESP_LOGI(tag_wifi, "connected to ap SSID:%s password:%s",
-                wifi_interface_handle->ssid, wifi_interface_handle->password);
+                     wifi_interface_handle->ssid, wifi_interface_handle->password);
         }
         else if (bits & WIFI_FAIL_BIT)
         {
             ESP_LOGI(tag_wifi, "Failed to connect to SSID:%s, password:%s",
-                wifi_interface_handle->ssid, wifi_interface_handle->password);
+                     wifi_interface_handle->ssid, wifi_interface_handle->password);
 
-            esp_nvs_change_key("SSID", wifi_interface_handle->nvs_handle);
-            esp_nvs_write_string("empty", wifi_interface_handle->nvs_handle);
-            esp_nvs_change_key("PASS", wifi_interface_handle->nvs_handle);
-            esp_nvs_write_string("empty", wifi_interface_handle->nvs_handle);
+            esp_wifi_forget();
+            esp_wifi_restart();
         }
         else
         {
@@ -674,7 +804,7 @@ void WiFiSimpleConnection()
         bool status_io_aux = false;
         while (wifi_interface_handle->server)
         {
-            vTaskDelay( 200/ portTICK_PERIOD_MS);
+            vTaskDelay(200 / portTICK_PERIOD_MS);
             status_io_aux = !status_io_aux;
             gpio_set_level(wifi_interface_handle->status_io, status_io_aux);
             esp_nvs_change_key("SSID", wifi_interface_handle->nvs_handle);
@@ -687,15 +817,10 @@ void WiFiSimpleConnection()
             {
                 ESP_LOGI(tag_wifi, "New SSID entered, restarting... ");
                 ESP_LOGI(tag_wifi, "SSID: %s", p_ssid);
-                esp_wifi_stop();
-                esp_wifi_deinit();
-                stop_webserver(wifi_interface_handle->server);
-                wifi_interface_handle->server = NULL;
-                fflush(stdout);
-                esp_restart();
+                esp_wifi_restart();
             }
         }
-        
     }
-}
 
+    
+}

@@ -14,6 +14,7 @@ typedef struct {
     uint8_t wifi_sae_mode; // SAE mode for WPA3
     uint8_t esp_wifi_scan_auth_mode_treshold; // Authentication mode threshold for Wi-Fi scan
     gpio_num_t status_io;
+    gpio_num_t reset_io;
   
 } esp_wifi_interface_config_t;
 
@@ -23,6 +24,7 @@ void WiFiDeinit ();
 
 void WiFiSimpleConnection();
 
+void esp_wifi_check_reset_button();
 
 #endif
 
