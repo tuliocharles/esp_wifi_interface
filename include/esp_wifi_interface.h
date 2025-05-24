@@ -5,6 +5,7 @@
 #include "esp_check.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
+#include "esp_nvs.h"
 
 typedef struct esp_wifi_interface_t *esp_wifi_interface_handle_t;
 

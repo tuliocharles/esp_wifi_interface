@@ -12,7 +12,7 @@ Licensed under the MIT License. See LICENSE file for details.
 
 #include "esp_system.h"
 #include "nvs_flash.h"
-#include "esp_nvs.h"
+
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "protocol_examples_common.h"

@@ -5,6 +5,8 @@ Licensed under the MIT License. See LICENSE file for details.
 
 #include <stdio.h>
 #include "esp_wifi_interface.h"
+#include "esp_log.h"
+#include "esp_nvs.h"
 
 #define LED_STATUS 2
 
@@ -23,9 +25,15 @@ void app_main(void)
 
     WiFiSimpleConnection();
 
+    esp_nvs_handle_t nvs_handle = esp_wifi_get_coiiote_nvs_handle();
+    
+    if (nvs_handle == NULL)
+    {
+        ESP_LOGE("NVS", "NVS handle is NULL");
+        }
     while(1){
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         esp_wifi_check_reset_button();
-
+        
         }
 }
