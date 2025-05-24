@@ -75,6 +75,11 @@ static esp_wifi_interface_handle_t wifi_interface_handle = NULL;
 static const char *tag_wifi = "WiFi";
 static EventGroupHandle_t s_wifi_event_group; // FreeRTOS event group to signal when we are connected
 
+esp_nvs_handle_t esp_wifi_get_coiiote_nvs_handle()
+{
+    return wifi_interface_handle->nvs_coiiote_handle;
+}
+
 // convert a hex digit to its integer value
 static char from_hex(char ch)
 {
