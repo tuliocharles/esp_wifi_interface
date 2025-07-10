@@ -341,7 +341,7 @@ static esp_err_t savessid_post_handler(httpd_req_t *req)
             else if (strcmp(key, "thingid") == 0)
             {
                 esp_nvs_change_key("thingid", handle->nvs_coiiote_handle);
-                char thingid[100];
+                char thingid[256];
                 url_decode(thingid, value);
                 esp_nvs_write_string(thingid, handle->nvs_coiiote_handle);
 
@@ -594,7 +594,7 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
        esp_nvs_config_t esp_nvs_coiiote_config = {
         .name_space ="coiiote_nvs",
         .key = "thingid",
-        .value_size = 64,
+        .value_size = 256,
     };
     
     if(init_esp_nvs(&esp_nvs_coiiote_config, &wifi_interface->nvs_coiiote_handle) == ESP_OK){
