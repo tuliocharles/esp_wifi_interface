@@ -27,8 +27,6 @@ void WiFiSimpleConnection();
 
 void esp_wifi_check_reset_button();
 
-esp_nvs_handle_t esp_wifi_get_coiiote_nvs_handle();
-
 #endif
 
 

@@ -61,7 +61,7 @@ struct esp_wifi_interface_t
     uint8_t channel;                          // channel of the access point
     wifi_typemode_t wifi_mode;                // mode of the access point
     esp_nvs_handle_t nvs_handle;              // NVS handle
-    esp_nvs_handle_t nvs_coiiote_handle; // NVS handle for CoIIoTe
+    //esp_nvs_handle_t nvs_coiiote_handle; // NVS handle for CoIIoTe
     httpd_handle_t server;                    // Handle off the web server
     uint8_t esp_max_retry;                    // maximum number of retries to connect to the AP
     uint8_t s_retry_num;                      // Number of attempts to connect to the AP
@@ -74,11 +74,6 @@ struct esp_wifi_interface_t
 static esp_wifi_interface_handle_t wifi_interface_handle = NULL;
 static const char *tag_wifi = "WiFi";
 static EventGroupHandle_t s_wifi_event_group; // FreeRTOS event group to signal when we are connected
-
-esp_nvs_handle_t esp_wifi_get_coiiote_nvs_handle()
-{
-    return wifi_interface_handle->nvs_coiiote_handle;
-}
 
 // convert a hex digit to its integer value
 static char from_hex(char ch)
@@ -197,34 +192,6 @@ static esp_err_t getssid_get_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
     httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
 
-    char thingid[64];
-    char *p = NULL;
-    esp_nvs_change_key("thingid", wifi_interface_handle->nvs_coiiote_handle);
-    if (esp_nvs_read_string(wifi_interface_handle->nvs_coiiote_handle, &p) != ESP_OK){
-        thingid[0] = '\0';
-        ESP_LOGW(tag_wifi, "Error to read Thing-ID");
-    } else{
-        strcpy(thingid, p);
-    }
-    
-    char thingname[64];
-    esp_nvs_change_key("thingname", wifi_interface_handle->nvs_coiiote_handle);
-    if (esp_nvs_read_string(wifi_interface_handle->nvs_coiiote_handle, &p) != ESP_OK){
-        thingname[0] = '\0';
-        ESP_LOGW(tag_wifi, "Error to read Thing-NAME");
-    } else{
-        strcpy(thingname, p);
-    }
-
-    char workspace[64];
-    esp_nvs_change_key("workspace", wifi_interface_handle->nvs_coiiote_handle);
-    if (esp_nvs_read_string(wifi_interface_handle->nvs_coiiote_handle, &p) != ESP_OK){
-        workspace[0] = '\0';
-        ESP_LOGW(tag_wifi, "Error to read WORKSPACE");
-    } else{
-        strcpy(workspace, p);
-    }
-
 
     static char wifi_form_html[2048];
     
@@ -246,16 +213,10 @@ static esp_err_t getssid_get_handler(httpd_req_t *req)
         "<form action=\"/savessid\" method=\"post\">"
         "SSID: <input name=\"ssid\" type=\"text\"> <br>"
         "Password: <input name=\"password\" type=\"password\"><br>"
-        "<h3>CoIIoTe</h3>"
-        "Thing-ID: <input name=\"thingid\" type=\"text\" value=\"%s\"><br>"
-        "Thing-Name: <input name=\"thingname\" type=\"text\" value=\"%s\"><br>"
-        "Thing-Password: <input name=\"thingpassword\" type=\"password\"> <br>"
-        "Workspace: <input name=\"workspace\" type=\"text\" value=\"%s\"><br><br>"
         "<button type=\"submit\">Enviar</button>"
         "</form>"
         "</div>"
-        "</body></html>", 
-        thingid, thingname, workspace);
+        "</body></html>");
 
     /* Send response with custom headers and body set as the
      * string passed in user context*/
@@ -338,38 +299,6 @@ static esp_err_t savessid_post_handler(httpd_req_t *req)
                 url_decode(pass, value);
                 esp_nvs_write_string(pass, handle->nvs_handle);
             }
-            else if (strcmp(key, "thingid") == 0)
-            {
-                esp_nvs_change_key("thingid", handle->nvs_coiiote_handle);
-                char thingid[256];
-                url_decode(thingid, value);
-                esp_nvs_write_string(thingid, handle->nvs_coiiote_handle);
-
-            }
-            else if (strcmp(key, "thingname") == 0)
-            {
-                esp_nvs_change_key("thingname", handle->nvs_coiiote_handle);
-                char thingname[100];
-                url_decode(thingname, value);
-                esp_nvs_write_string(thingname, handle->nvs_coiiote_handle);
-
-            }
-            else if (strcmp(key, "thingpassword") == 0)
-            {
-                esp_nvs_change_key("thingpassword", handle->nvs_coiiote_handle);
-                char thingpassword[100];
-                url_decode(thingpassword, value);
-                esp_nvs_write_string(thingpassword, handle->nvs_coiiote_handle);
-
-            }
-            else if (strcmp(key, "workspace") == 0)
-            {
-                esp_nvs_change_key("workspace", handle->nvs_coiiote_handle);
-                char workspace[100];
-                url_decode(workspace, value);
-                esp_nvs_write_string(workspace, handle->nvs_coiiote_handle);
-
-            }
             else
             {
                 ESP_LOGI(tag_wifi, "Chave não reconhecida: %s", key);
@@ -393,24 +322,8 @@ static const httpd_uri_t savessid = {
     .handler = savessid_post_handler,
     .user_ctx = NULL};
 
-esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
-{
-    if (strcmp("/getssid", req->uri) == 0)
-    {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/getssid URI is not available");
-        /* Return ESP_OK to keep underlying socket open */
-        return ESP_OK;
-    }
-    else if (strcmp("/savessid", req->uri) == 0)
-    {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/savessid URI is not available");
-        /* Return ESP_FAIL to close underlying socket */
-        return ESP_FAIL;
-    }
-    /* For any other URI send 404 and close socket */
-    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Some 404 error message");
-    return ESP_FAIL;
-}
+
+
 
 static httpd_handle_t start_webserver(esp_wifi_interface_handle_t handle1)
 {
@@ -590,19 +503,6 @@ esp_err_t WiFiInit(esp_wifi_interface_config_t *config)
 
     init_esp_nvs(&esp_nvs_config, &wifi_interface->nvs_handle);
     ESP_LOGI(tag_wifi, "NVS Created Successfully");
-
-       esp_nvs_config_t esp_nvs_coiiote_config = {
-        .name_space ="coiiote_nvs",
-        .key = "thingid",
-        .value_size = 256,
-    };
-    
-    if(init_esp_nvs(&esp_nvs_coiiote_config, &wifi_interface->nvs_coiiote_handle) == ESP_OK){
-        ESP_LOGI(tag_wifi, "NVS for CoIIote Created Successfully");
-    }else{
-        ESP_LOGE(tag_wifi, "NVS for CoIIote not created");
-    };
-    
 
     char *p_ssid = NULL;
     esp_err_t ret_nvs = esp_nvs_read_string(wifi_interface->nvs_handle, &p_ssid);
