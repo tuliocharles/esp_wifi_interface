@@ -730,3 +730,8 @@ void WiFiSimpleConnection()
 
     
 }
+
+const char *WiFiGetLocalIP()
+{
+    return wifi_interface_handle->local_ip;
+}

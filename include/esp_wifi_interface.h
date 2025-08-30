@@ -27,6 +27,8 @@ void WiFiSimpleConnection();
 
 void esp_wifi_check_reset_button();
 
+const char *WiFiGetLocalIP();
+
 #endif
 
 

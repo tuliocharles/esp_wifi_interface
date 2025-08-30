@@ -24,6 +24,9 @@ void app_main(void)
     WiFiInit (&wifi_inteface_config);
 
     WiFiSimpleConnection();
+
+    char my_ip[16];
+    snprintf(my_ip, sizeof(my_ip), "%s", WiFiGetLocalIP());
    
     while(1){
         vTaskDelay(1000 / portTICK_PERIOD_MS);
