@@ -61,7 +61,7 @@ struct esp_wifi_interface_t
     uint8_t channel;                          // channel of the access point
     wifi_typemode_t wifi_mode;                // mode of the access point
     esp_nvs_handle_t nvs_handle;              // NVS handle
-    //esp_nvs_handle_t nvs_coiiote_handle; // NVS handle for CoIIoTe
+    char local_ip[16];                        // local IP address
     httpd_handle_t server;                    // Handle off the web server
     uint8_t esp_max_retry;                    // maximum number of retries to connect to the AP
     uint8_t s_retry_num;                      // Number of attempts to connect to the AP
@@ -420,6 +420,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(tag_wifi, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         wifi_interface_handle->s_retry_num = 0;
+        sprintf(wifi_interface_handle->local_ip, IPSTR, IP2STR(&event->ip_info.ip));
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         gpio_set_level(wifi_interface_handle->status_io, 1);
     }
